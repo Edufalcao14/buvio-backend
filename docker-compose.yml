@@ -1,0 +1,79 @@
+services:
+  server:
+    build:
+      context: .
+      target: development
+    ports:
+      - 4000:4000
+      # Loopback only. The Node inspector protocol is unauthenticated: anyone
+      # who can reach this port executes arbitrary code in the process, so it
+      # must never be published on a routable interface.
+      - 127.0.0.1:9229:9229
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-buvio}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@database:5432/${POSTGRES_DB:-buvio}
+      - GRAPHQL_SANDBOX=${GRAPHQL_SANDBOX:-true}
+      - GRAPHQL_MAX_DEPTH=${GRAPHQL_MAX_DEPTH:-10}
+      - GRAPHQL_MAX_FIELDS=${GRAPHQL_MAX_FIELDS:-300}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-120}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:8081}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCP_CREDENTIALS_CLIENT_ID=${GCP_CREDENTIALS_CLIENT_ID}
+      - GCP_CREDENTIALS_CLIENT_EMAIL=${GCP_CREDENTIALS_CLIENT_EMAIL}
+      - GCP_CREDENTIALS_PRIVATE_KEY=${GCP_CREDENTIALS_PRIVATE_KEY}
+      - GCP_CREDENTIALS_TYPE=${GCP_CREDENTIALS_TYPE}
+      - GCP_STORAGE_BUCKET_NAME=${GCP_STORAGE_BUCKET_NAME}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_CREDENTIALS_CLIENT_EMAIL=${FIREBASE_CREDENTIALS_CLIENT_EMAIL}
+      - FIREBASE_CREDENTIALS_PRIVATE_KEY=${FIREBASE_CREDENTIALS_PRIVATE_KEY}
+      - FIREBASE_CLIENT_API_KEY=${FIREBASE_CLIENT_API_KEY}
+      - FIREBASE_CLIENT_AUTH_DOMAIN=${FIREBASE_CLIENT_AUTH_DOMAIN}
+      - FIREBASE_CLIENT_STORAGE_BUCKET=${FIREBASE_CLIENT_STORAGE_BUCKET}
+      - FIREBASE_CLIENT_MESSAGING_SENDER_ID=${FIREBASE_CLIENT_MESSAGING_SENDER_ID}
+      - FIREBASE_CLIENT_APP_ID=${FIREBASE_CLIENT_APP_ID}
+    volumes:
+      - ./src:/usr/src/app/src
+    depends_on:
+      database:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  database:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-buvio}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      - POSTGRES_DB=${POSTGRES_DB:-buvio}
+    ports:
+      # Loopback only: no reason for the development database to accept
+      # connections from the network. The host port is configurable because
+      # 5432 is usually already taken by another project's database.
+      - 127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_USER:-buvio} -d ${POSTGRES_DB:-buvio} -h localhost -p 5432',
+        ]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
+  migrate:
+    build:
+      context: .
+      target: migration
+    volumes:
+      - ./src/repositories/database/migrations:/usr/src/app/src/repositories/database/migrations
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-buvio}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@database:5432/${POSTGRES_DB:-buvio}
+    depends_on:
+      database:
+        condition: service_healthy
+
+volumes:
+  database:
