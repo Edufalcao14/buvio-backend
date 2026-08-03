@@ -1,0 +1,600 @@
+scalar Email
+scalar DateTime
+
+"""
+System user account with core identity information
+"""
+type User {
+  """
+  Unique internal identifier for the user
+  """
+  id: ID!
+
+  """
+  User's display name shown across the application
+  """
+  displayName: String!
+
+  """
+  The name the squad knows this player by. Null when unset, in which case
+  clients fall back to the first word of the display name
+  """
+  nickname: String
+
+  """
+  Where to read this player's avatar. Null until they have uploaded one
+  """
+  avatarUrl: String
+
+  """
+  User's verified email address for communications
+  """
+  email: String!
+
+  """
+  Timestamp when the user account was first created
+  """
+  createdAt: DateTime!
+
+  """
+  Timestamp when the user account was last modified
+  """
+  updatedAt: DateTime!
+
+  """
+  Timestamp when the user account was soft-deleted, if applicable
+  """
+  deletedAt: DateTime
+
+  """
+  Reference ID linked to external systems or services
+  """
+  externalId: ID!
+
+  """
+  Reference to team membership for organizational structure
+  """
+  team: Team
+}
+
+"""
+Complete authentication response containing tokens and user data
+"""
+type AuthPayload {
+  """
+  JWT token for authorizing API requests
+  """
+  accessToken: String!
+
+  """
+  Token used to obtain new access tokens without re-authentication
+  """
+  refreshToken: String!
+
+  """
+  Complete user profile information for the authenticated user
+  """
+  user: User!
+}
+
+"""
+Input used to obtain access tokens without re-authentication
+"""
+input RefreshTokenInput {
+  """
+  Token used to obtain new access tokens without re-authentication
+  """
+  refreshToken: String!
+}
+
+"""
+Authentication token set with expiration information
+"""
+type AuthTokens {
+  """
+  JWT token for authorizing API requests
+  """
+  accessToken: String!
+
+  """
+  Token used to obtain new access tokens without re-authentication
+  """
+  refreshToken: String!
+
+  """
+  Precise date and time when the tokens will expire
+  """
+  expiredAt: DateTime!
+}
+
+"""
+Current authenticated user's essential profile data
+"""
+type Me {
+  """
+  Unique identifier of the authenticated user
+  """
+  id: ID!
+
+  """
+  Primary email address of the authenticated user
+  """
+  email: String!
+
+  """
+  User's name displayed throughout the interface
+  """
+  displayName: String!
+
+  """
+  The name the squad knows this player by. Null when unset
+  """
+  nickname: String
+
+  """
+  Where to read this player's avatar. Null until they have uploaded one
+  """
+  avatarUrl: String
+
+  """
+  Organization team identifier the user belongs to
+  """
+  team: Team
+}
+
+"""
+Team
+"""
+type Team {
+  """
+  Unique internal identifier for the team
+  """
+  id: ID!
+
+  """
+  Team's display name shown across the application
+  """
+  name: String!
+
+  """
+  The team's code that enables users to join the team
+  """
+  code: String!
+
+  """
+  The sport that the team specializes in
+  """
+  sport: String
+
+  """
+  Where to read the team's crest. Null while the team still shows a monogram
+  of its initials
+  """
+  crestUrl: String
+
+  """
+  User who created the team
+  """
+  creator: User!
+
+  """
+  Timestamp when the team was first created
+  """
+  createdAt: DateTime!
+
+  """
+  Timestamp when the team was last modified
+  """
+  updatedAt: DateTime!
+
+  """
+  Returns a list of all matches in the system
+  """
+  matches: [Match]!
+}
+
+"""
+Permission to upload one image straight to the bucket. The client PUTs the
+bytes to uploadUrl, then hands key back to the matching confirm mutation —
+which is what actually attaches the image
+"""
+type UploadTicket {
+  """
+  Short-lived signed URL to PUT the image bytes to. It pins the content type
+  the ticket was issued for
+  """
+  uploadUrl: String!
+
+  """
+  The object key to send back once the upload succeeded
+  """
+  key: String!
+}
+
+enum VoteSessionStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum VoteClosureReason {
+  ADMIN
+  DEADLINE
+  UNANIMOUS
+}
+
+"""
+How far one player has got with their ballot in an open session
+"""
+type BallotProgress {
+  player: User!
+  hasTop: Boolean!
+  hasFlop: Boolean!
+  isComplete: Boolean!
+}
+
+"""
+How many Top and Flop votes one player has collected so far in this session.
+Public while the session is open — watching the count move is the ritual
+"""
+type TallyEntry {
+  player: User!
+  topCount: Int!
+  flopCount: Int!
+}
+
+enum MatchType {
+  AMICAL
+  TOURNOI
+  CHAMPIONNAT
+}
+
+type VoteResult {
+  top: User!
+  flop: User!
+}
+
+"""
+Match
+"""
+type Match {
+  """
+  Unique internal identifier for the match
+  """
+  id: ID!
+
+  """
+  Match's display name shown across the application
+  """
+  name: String!
+
+  """
+  The team's code that enables users to join the team
+  """
+  date: DateTime!
+
+  """
+  User who created the match
+  """
+  creator: User!
+
+  """
+  Team participating in the match
+  """
+  team: Team!
+
+  """
+  Type of the match
+  """
+  type: MatchType!
+
+  """
+  Timestamp when the match was first created
+  """
+  createdAt: DateTime!
+
+  """
+  Timestamp when the match was last modified
+  """
+  updatedAt: DateTime!
+
+  """
+  Timestamp when the match was soft-deleted
+  """
+  deletedAt: DateTime
+
+  """
+  List of players participating in the match
+  """
+  players: [User!]!
+
+  """
+  Current voting session of the match session or null if not started yet
+  """
+  votingSession: VotingSession
+}
+
+type VotingSession {
+  """
+  Unique internal identifier for the voting session
+  """
+  id: ID!
+
+  """
+  Optional date and time when the voting session will close
+  """
+  closingAt: DateTime
+
+  """
+  User who initiated the voting session
+  """
+  startedBy: User!
+
+  """
+  The match associated with this voting session
+  """
+  match: Match!
+
+  """
+  Timestamp when the vote session was first created
+  """
+  createdAt: DateTime!
+
+  """
+  Timestamp when the vote session was last modified
+  """
+  updatedAt: DateTime!
+
+  """
+  Current voting status of the session
+  """
+  status: VoteSessionStatus!
+
+  """
+  The remaining time for an open voting session in seconds
+  """
+  timeRemaining: Int!
+
+  """
+  Results of the voting session, including the top and flop users. Null until
+  the session closes
+  """
+  voteResult: VoteResult
+
+  """
+  When the session actually closed. Null while it is open
+  """
+  closedAt: DateTime
+
+  """
+  Why the session closed. Null while it is open
+  """
+  closedReason: VoteClosureReason
+
+  """
+  Ballot progress of every player on the match roster
+  """
+  ballots: [BallotProgress!]!
+
+  """
+  The live count, one entry per player who has received at least one vote
+  """
+  tally: [TallyEntry!]!
+
+  """
+  Every vote cast so far, with its comment
+  """
+  votes: [Vote!]!
+}
+
+enum VoteType {
+  TOP
+  FLOP
+}
+
+"""
+Represents a single vote cast by a user in a voting session, indicating their top and flop choices
+"""
+type Vote {
+  """
+  Unique internal identifier for the vote
+  """
+  id: ID!
+
+  """
+  The voting session this vote belongs to
+  """
+  votingSession: VotingSession!
+
+  """
+  The user who cast this vote
+  """
+  voter: User!
+
+  """
+  The user voted
+  """
+  voted: User!
+
+  """
+  The type of vote (top or flop)
+  """
+  type: VoteType!
+
+  """
+  Optional description or comment for the vote
+  """
+  description: String
+
+  """
+  Timestamp when the vote was first created
+  """
+  createdAt: DateTime!
+
+  """
+  Timestamp when the vote was last modified
+  """
+  updatedAt: DateTime!
+
+  """
+  Timestamp when the vote was soft deleted
+  """
+  deletedAt: DateTime
+}
+
+"""
+One player's place in their team's standings, counted over closed voting
+sessions only
+"""
+type PlayerStanding {
+  """
+  The player this row is about
+  """
+  player: User!
+
+  """
+  How many times the squad voted this player top
+  """
+  topCount: Int!
+
+  """
+  How many times the squad voted this player flop
+  """
+  flopCount: Int!
+}
+
+type Query {
+  """
+  Validates if an email address is already registered in the system
+  """
+  isEmailTaken(email: String!): Boolean!
+
+  """
+  Standings of the caller's team, best first. Every member is listed, even
+  those nobody has voted for yet
+  """
+  teamRanking: [PlayerStanding!]!
+
+  """
+  Retrieves the current authenticated user's profile information
+  """
+  me: Me!
+
+  """
+  Retrieves the team associated with the specified code
+  """
+  teamByCode(code: String!): Team!
+
+  """
+  Retrieves a list of all players associated with the specified team
+  """
+  getTeamMembers: [User!]!
+
+  """
+  Validates if a team's code exists
+  """
+  validateTeamCode(code: String!): Boolean!
+
+  """
+  Retrieves a Match by its ID
+  """
+  getMatchById(matchId: ID!): Match!
+
+  """
+  Checks if the current authenticated user has already voted in the specified voting session
+  """
+  userHasVoted(playerId: ID!, votingSessionId: ID!): Boolean
+}
+
+type Mutation {
+  """
+  Registers a new user account with required credentials and profile information
+  """
+  createUser(
+    email: String!
+    password: String!
+    displayName: String!
+    nickname: String
+  ): AuthPayload!
+
+  """
+  Updates the caller's own profile. An omitted field is left untouched; an
+  empty nickname clears it and puts the player back on the display-name
+  fallback
+  """
+  updateProfile(nickname: String, displayName: String): Me!
+
+  """
+  Requests permission to upload a new avatar for the caller. Accepts
+  image/jpeg, image/png and image/webp
+  """
+  createAvatarUploadUrl(contentType: String!): UploadTicket!
+
+  """
+  Attaches an uploaded object to the caller as their avatar
+  """
+  confirmAvatarUpload(key: String!): Me!
+
+  """
+  Requests permission to upload a new crest for the caller's team. Only the
+  player who created the team may do this
+  """
+  createTeamCrestUploadUrl(contentType: String!): UploadTicket!
+
+  """
+  Attaches an uploaded object to the caller's team as its crest
+  """
+  confirmTeamCrestUpload(key: String!): Team!
+
+  """
+  Authenticates an existing user with credentials and returns tokens
+  """
+  signIn(email: String!, password: String!): AuthPayload!
+
+  """
+  Refreshes the token of an existing user and returns new tokens
+  """
+  refreshToken(input: RefreshTokenInput!): AuthTokens!
+
+  """
+  Creates a new team with a specified name and optional sport
+  """
+  createTeam(name: String!, sport: String): Team!
+
+  """
+  Join a new team with a specified name and optional sport
+  """
+  joinTeam(code: String!): Team!
+
+  """
+  Creates a new Match with a specified name and date
+  """
+  createMatch(name: String!, date: DateTime!, type: MatchType!): Match!
+
+  """
+  Creates a new vote session for a specified match (optionnal)
+  """
+  createVotingSession(matchId: ID!, closingAt: DateTime): VotingSession!
+  """
+  Closes a voting session early. Only the player who started it may do this
+  """
+  closeVotingSession(votingSessionId: ID!): VotingSession!
+
+  """
+  Creates a new vote  for a specified vote Session
+  """
+  submitVote(
+    votingSession: ID!
+    votedUserId: ID!
+    type: VoteType!
+    description: String
+  ): Vote!
+}
+
+type Subscription {
+  """
+  Pushes the voting session every time it changes: a ballot cast, or the
+  session closing
+  """
+  votingSessionUpdated(votingSessionId: ID!): VotingSession!
+}

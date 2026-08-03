@@ -1,0 +1,23 @@
+# This configuration file tells GraphQL Code Generator how
+# to generate types based on our schema.
+schema:
+  - './src/graphql/schema.graphql'
+generates:
+  # Specify where our generated types should live.
+  ./src/graphql/__generated__/resolvers-types.ts:
+    plugins:
+      - 'typescript'
+      - 'typescript-resolvers'
+    config:
+      useIndexSignature: true
+      # More on this below!
+      contextType: '../../libs/context#AppContext'
+      mappers:
+        User: '../../entities/user/user#UserEntity'
+        Me: '../../entities/auth/me#MeEntity'
+        AuthTokens: '../../entities/auth/auth-tokens#AuthTokensEntity'
+        Team: '../../entities/team/team#TeamEntity'
+        Match: '../../entities/match/match#MatchEntity'
+        VotingSession: '../../entities/votingSession/votingSession#VotingSessionEntity'
+        Vote: '../../entities/vote/vote#VoteEntity'
+        UploadTicket: '../../entities/storage/upload-ticket#UploadTicketEntity'
