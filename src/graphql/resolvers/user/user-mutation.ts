@@ -21,6 +21,7 @@ export const initUserMutationResolvers = (
   | 'updateProfile'
   | 'createAvatarUploadUrl'
   | 'confirmAvatarUpload'
+  | 'deleteAccount'
 > => {
   return {
     createUser: async (
@@ -49,6 +50,9 @@ export const initUserMutationResolvers = (
         nickname: args.nickname,
         displayName: args.displayName,
       });
+    },
+    deleteAccount: async (_, __, context: AppContext): Promise<boolean> => {
+      return await usecases.user.deleteAccount(context);
     },
     createAvatarUploadUrl: async (
       _,

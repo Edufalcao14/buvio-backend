@@ -154,6 +154,17 @@ export type Mutation = {
   createUser: AuthPayload;
   /** Creates a new vote session for a specified match (optionnal) */
   createVotingSession: VotingSession;
+  /**
+   * Permanently deletes the caller's own account.
+   *
+   * The person is erased - name, nickname, email address, photograph and their
+   * place in the squad - and every token they hold stops working immediately.
+   * The votes they cast about other players are kept and anonymised, because
+   * those belong to their team-mates' history rather than to them.
+   *
+   * There is no user id argument: a player deletes only themselves
+   */
+  deleteAccount: Scalars['Boolean']['output'];
   /** Join a new team with a specified name and optional sport */
   joinTeam: Team;
   /** Refreshes the token of an existing user and returns new tokens */
@@ -342,7 +353,14 @@ export type Team = {
   crestUrl?: Maybe<Scalars['String']['output']>;
   /** Unique internal identifier for the team */
   id: Scalars['ID']['output'];
-  /** Returns a list of all matches in the system */
+  /**
+   * The team's matches, most recent first.
+   *
+   * Paginated because this list grows without bound in time: a club two seasons
+   * in has hundreds of matches, and the history screen used to fetch every one of
+   * them on each visit. `limit` and `offset` are optional so an existing caller
+   * keeps working, but a client showing a list should always pass them.
+   */
   matches: Array<Maybe<Match>>;
   /** Team's display name shown across the application */
   name: Scalars['String']['output'];
@@ -350,6 +368,12 @@ export type Team = {
   sport?: Maybe<Scalars['String']['output']>;
   /** Timestamp when the team was last modified */
   updatedAt: Scalars['DateTime']['output'];
+};
+
+/** Team */
+export type TeamMatchesArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /**
@@ -818,6 +842,7 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationCreateVotingSessionArgs, 'matchId'>
   >;
+  deleteAccount?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   joinTeam?: Resolver<
     ResolversTypes['Team'],
     ParentType,
@@ -950,7 +975,8 @@ export type TeamResolvers<
   matches?: Resolver<
     Array<Maybe<ResolversTypes['Match']>>,
     ParentType,
-    ContextType
+    ContextType,
+    Partial<TeamMatchesArgs>
   >;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   sport?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;

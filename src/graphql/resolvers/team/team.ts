@@ -29,7 +29,12 @@ export const initTeamResolvers = (usecases: Usecases): TeamResolvers => ({
   createdAt: (parent) => {
     return parent.createdAt;
   },
-  matches: async (parent, _, context) => {
-    return await usecases.match.getMatchesByTeamId(context, parent.id);
+  matches: async (parent, args, context) => {
+    // Forwarded as given: both undefined keeps the batched dataloader path,
+    // which is what an unpaginated caller still wants.
+    return await usecases.match.getMatchesByTeamId(context, parent.id, {
+      limit: args.limit ?? undefined,
+      offset: args.offset ?? undefined,
+    });
   },
 });

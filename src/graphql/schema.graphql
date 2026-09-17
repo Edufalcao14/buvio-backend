@@ -188,9 +188,25 @@ type Team {
   updatedAt: DateTime!
 
   """
-  Returns a list of all matches in the system
+  The team's matches, most recent first.
+
+  Paginated because this list grows without bound in time: a club two seasons
+  in has hundreds of matches, and the history screen used to fetch every one of
+  them on each visit. `limit` and `offset` are optional so an existing caller
+  keeps working, but a client showing a list should always pass them.
   """
-  matches: [Match]!
+  matches(
+    """
+    How many matches to return. Omit for all of them (only sensible for a
+    young team, or for a count)
+    """
+    limit: Int
+
+    """
+    How many matches to skip before the ones returned
+    """
+    offset: Int
+  ): [Match]!
 }
 
 """
@@ -523,6 +539,18 @@ type Mutation {
   fallback
   """
   updateProfile(nickname: String, displayName: String): Me!
+
+  """
+  Permanently deletes the caller's own account.
+
+  The person is erased - name, nickname, email address, photograph and their
+  place in the squad - and every token they hold stops working immediately.
+  The votes they cast about other players are kept and anonymised, because
+  those belong to their team-mates' history rather than to them.
+
+  There is no user id argument: a player deletes only themselves
+  """
+  deleteAccount: Boolean!
 
   """
   Requests permission to upload a new avatar for the caller. Accepts
