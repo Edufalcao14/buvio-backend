@@ -4,10 +4,36 @@ npm-debug.log
 yarn-error.log
 yarn-debug.log
 
-# Environment files
+# ---------------------------------------------------------------------------
+# Secrets. Nothing in this block may ever reach the remote.
+#
+# Every .env is ignored and the template is the single exception, so a new
+# variable is documented without its value ever being committed.
+# ---------------------------------------------------------------------------
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+
+# Service-account and credential files, by every name they are handed out under
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+service-account*.json
+serviceaccount*.json
+firebase-adminsdk*.json
+gcp-*.json
+**/secrets/
+
+# Database dumps and local data - these carry real user records
+*.sql.gz
+*.dump
+*.sqlite
+*.sqlite3
 
 # Apollo-specific (if any local or generated files specific to Apollo)
 # E.g., Apollo Engine configuration if not stored in environment variables
@@ -72,10 +98,6 @@ build/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
-.env
-.env.test
-
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
@@ -117,3 +139,8 @@ dist
 
 # VSCode directories
 .vscode/
+
+# Audit and report artefacts are generated, never committed
+audit-report/
+*.pdf
+*.docx
