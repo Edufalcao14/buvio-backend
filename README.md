@@ -1,149 +1,94 @@
-# Back-end API
+# Buvio — backend
 
-This project serves as a comprehensive backend solution, offering both GraphQL and RESTful API endpoints. It enables interaction with the provided services through GraphQL queries for internal front-end applications and REST endpoints for third-party integrations.
+Buvio is the third half — _la troisième mi-temps_ — made into an app: an
+amateur football squad plays a match, then gathers to crown its **Top** and
+roast its **Flop**.
 
-The architecture is designed to keep the codebase simple and straightforward, facilitating ease of understanding for new developers joining the project. Any additions that introduce complexity to the structure require a justified reason, ensuring the maintainability and scalability of the system.
+This service is the whole backend: a single GraphQL API (queries, mutations and
+one subscription) over Postgres, consumed by the `Buvio-mobile` Expo app. There
+is no REST surface — third parties are not a use case.
+
+Read [CONTEXT.md](CONTEXT.md) first. It defines the domain language (Team,
+Match, Voting Session, Ballot, Tally, Verdict, Closure Reason, ...) and the
+rules that shape it; the code uses those words literally, and a name that
+drifts from that list is a bug.
+
+Decisions that are not obvious from the code live in [docs/adr](docs/adr):
+
+- [0001](docs/adr/0001-voting-session-closure-is-stored-not-derived.md) — closure is stored, not derived
+- [0002](docs/adr/0002-realtime-over-graphql-subscriptions.md) — realtime over GraphQL subscriptions
+- [0003](docs/adr/0003-images-upload-directly-to-r2.md) — images upload directly to R2
 
 ## Table of Contents
 
-- [Features](#features)
 - [Getting started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Start developping](#start-developping)
-  - [VS Code debugging](#vs-code-debugging)
-- [Folder Structure](#folder-structure)
-  - [Entities](#entities)
-  - [Repositories](#repositories)
-  - [UseCases](#usecases)
-  - [GraphQL](#graphql)
-  - [REST](#rest)
-  - [Gateways](#gateways)
+- [Folder structure](#folder-structure)
 - [Context object](#context-object)
-- [Error Handling](#error-handling)
+- [Realtime and the sweeper](#realtime-and-the-sweeper)
+- [Error handling](#error-handling)
 - [Authorization](#authorization)
 - [Request cost limits and rate limiting](#request-cost-limits-and-rate-limiting)
 - [Testing](#testing)
-- [Database Migrations](#database-migrations)
-- [Dependencies updates](#dependencies-uupdates)
-
-## Features
-
-- **Dual API Interfaces:** Supports GraphQL for flexible, powerful API interactions and RESTful endpoints for external API consumption.
-- **Scalable Architecture:** Designed for ease of extension and maintenance with a focus on clean, understandable code.
+- [Database migrations](#database-migrations)
+- [Dependencies updates](#dependencies-updates)
 
 ## Getting started
 
 ### Prerequisites
 
-Before you get started, make sure you have the following tools installed:
+- [Bun](https://bun.sh/docs/installation) — runs the source in development and
+  the compiled output in production. `tsc` is kept only for the build and for
+  typechecking, which bun does not do.
+- [Docker](https://docs.docker.com/get-docker/) with Compose.
+- A `.env` at the root: copy `.env.example` and fill it in. `docker compose`
+  refuses to start without `POSTGRES_PASSWORD`, and the server refuses to boot
+  outside development without `CORS_ORIGIN` (unset makes CORS answer every
+  origin with `*`). Firebase credentials are needed to sign in at all; the R2
+  ones can stay empty — only the upload mutations fail without them.
 
-- Bun: [Bun Installation Guide](https://bun.sh/docs/installation)
-- Docker: [Docker Installation Guide](https://docs.docker.com/get-docker/)
-- Docker Compose: [Docker Compose Installation Guide](https://docs.docker.com/compose/install/)
-- You have to put in the root folder a `.env` file with all the environment variables you need to run the project. Copy `.env.example` and fill it in: `docker compose` refuses to start without `POSTGRES_PASSWORD`, and the server refuses to boot outside development without `CORS_ORIGIN`.
-
-### Start developping
-
-#### Start the Application
-
-To start the application, run:
+### Run it
 
 ```bash
 docker compose up --build
 ```
 
-The development database is published on `127.0.0.1:55432` by default (5432 is
-usually taken by another project); override with `POSTGRES_HOST_PORT`.
+This creates the local database, applies migrations and starts the server on
+`PORT` (4000) with the Apollo sandbox at `/graphql` when `GRAPHQL_SANDBOX=true`.
+`src` is bind-mounted and `bun --watch` reloads on change, so no restart is
+needed after an edit.
 
-This will initiate the Docker containers, create the local database, apply database migrations and run the application.
+The development database is published on `127.0.0.1:55432` (5432 is usually
+taken by another project); override with `POSTGRES_HOST_PORT`.
 
-We are using volumes to share files (in the `src` folder) between local environment and docker container. By doing that we can watch files changes and enable hot reloading (with `bun --watch`) of the application. This means that if you are updating a file in the `src` folder, the changes will be reflected in the running application. So you won't need to restart the container after each change.
-
-#### Run Tests
-
-To execute the unit and integration tests, use the command:
-
-```bash
-bun run test
-```
-
-For specific tests, specify the path:
+To fill it with a team, players, matches and closed sessions:
 
 ```bash
-bun run test path/to/your/test/file.test.ts
+bun run db:seed
 ```
 
-#### Apply migrations
+### Commands
 
-To apply database migrations, run:
+| Command                            | What it does                                                                                 |
+| ---------------------------------- | -------------------------------------------------------------------------------------------- |
+| `bun run test [path]`              | Jest — unit tests plus repository integration tests against a real Postgres                  |
+| `bun run typecheck`                | `tsc --noEmit`; CI runs this and the tests                                                   |
+| `bun run db:migrate:up` / `:down`  | Apply / revert migrations (needs `DATABASE_URL`)                                             |
+| `bun run db:generate`              | Regenerate `src/repositories/database/models.ts` from the live schema — run migrations first |
+| `bun run graphql:generate[:watch]` | Regenerate resolver types from `src/graphql/schema.graphql`                                  |
+| `bun run format`                   | Prettier                                                                                     |
 
-```bash
-bun run db:migrate:up
-```
-
-Make sure you have the correct `DATABASE_URL` environment variable set in `.env` file.
-
-To revert the last migration:
-
-```bash
-bun run db:migrate:down
-```
-
-#### Generate database types
-
-To generate TypeScript types based on your current database structure, use:
-
-```bash
-bun run db:generate
-```
-
-This will introspect your current database structure and generate TypeScript types based on it.
-Ensure you've applied all migrations before generating types to reflect the latest database structure.
-
-#### Generate graphql types
-
-Generate TypeScript types from the GraphQL schema (`src/graphql/schema.graphql`) with:
-
-```bash
-bun run graphql:generate
-```
-
-To watch for changes in your GraphQL schema and automatically regenerate types, use:
-
-```bash
-bun run graphql:generate:watch
-```
-
-#### Format code
-
-To ensure your codebase follows consistent formatting rules, run:
-
-```bash
-bun run format
-```
+Husky enforces a commit message convention and a branch name of
+`(feat|feature|chore|fix|hotfix|release)/...`.
 
 ### VS Code debugging
 
-To set up debugging in Visual Studio Code, especially for applications that may be running either locally or within Docker containers, you will need to create a specific configuration file within your project. Here's how to do it:
-
-**Create the `.vscode` directory:** First, ensure that your project has a `.vscode` directory at the root level. If it doesn't exist yet, you can create it manually. This directory is used by VS Code to store configuration files specific to your workspace.
-
-**Create the `launch.json` file:** Inside the `.vscode` directory, create a file named `launch.json`. This JSON file will contain configurations that tell VS Code how to connect to and debug your application.
-
-**Insert the Debugging Configuration:** Copy the provided JSON configuration into your newly created `launch.json` file. This configuration defines two debugging profiles: one for attaching the debugger to a local Node.js process and another for attaching to a Node.js process running inside a Docker container.
+The dev server exposes the inspector on `9229` (`bun --watch --inspect`). Add
+`.vscode/launch.json`:
 
 ```json
 {
   "version": "0.2.0",
   "configurations": [
-    {
-      "name": "Attach to Node",
-      "type": "node",
-      "request": "attach",
-      "port": 9229,
-      "restart": true,
-      "skipFiles": ["<node_internals>/**"]
-    },
     {
       "name": "Docker: Attach to Node",
       "type": "node",
@@ -159,196 +104,93 @@ To set up debugging in Visual Studio Code, especially for applications that may 
 }
 ```
 
-**Using the Debugging Profiles:** After setting up the `launch.json` file, you can use VS Code's built-in debugging tools to start a debugging session. Open the Run and Debug sidebar (using the side panel icon or the Ctrl+Shift+D shortcut), select the debugging profile you want to use from the dropdown (either "Attach to Node" for local debugging or "Docker: Attach to Node" for container debugging), and then click the green play button to start the session.
+## Folder structure
 
-## Folder Structure
-
-### Entities
-
-The **entities** directory is dedicated to defining all business objects. These entities are designed to be simple, containing only essential properties. This approach ensures that the entities remain lightweight and focused on their core purpose. They are designed to encapsulate only the properties that are relevant at the business logic level. There are structured by folders as well.
+The layering is deliberately flat: a resolver calls a usecase, a usecase calls
+repositories and gateways, nothing calls back up. Anything that adds a layer to
+that needs a reason.
 
 ```
-entities/
-├── module1/
-│ ├── entity1.ts
-│ ├── entity2.ts
-│ └── ...
-├── module2/
-│ ├── entity3.ts
-│ └── ...
-└── ...
+src/
+├── entities/        business objects, by module (match, team, user, vote, votingSession, ...)
+├── usecases/        one file, one public function — the application's verbs
+├── repositories/    database access, one folder per table + database/ (Kysely, migrations, models)
+├── graphql/         schema.graphql, resolvers, scalars, validation rules, error plumbing
+├── gateways/        external services (iam, storage) + mocks/ used by tests
+└── libs/            config, context, events, logger, rate-limit, scheduler, tests
 ```
 
-### Repositories
+### entities
 
-The **repositories** directory is where all database access mechanisms are housed. It is organized into folders, each representing a specific database table. Each folder contains files corresponding to a function for fetching or mutating data from the database for the specific table.
+Plain business objects, no framework types. Some carry the rules that the
+domain actually turns on and are unit-tested on their own — `ballot.ts`
+(a ballot cannot name its caster, cannot name someone off the roster, cannot
+give the same teammate both Top and Flop), `vote-result.ts` (a session without
+votes in both categories has **no** verdict), `player-standing.ts`,
+`social-name.ts` (the nickname → display-name fallback).
 
-```
-repositories/
-├── database/
-│ ├── migrations/
-│ ├── database.ts
-│ ├── models.ts
-│ └── ...
-├── table1/
-│ ├── mappers/
-│ ├── get-by-id.ts
-│ ├── create.ts
-│ ├── update.ts
-│ ├── delete.ts
-│ └── ...
-├── table2/
-│ └── ...
-└── ...
-```
+### usecases
 
-Each repository is designed to interact with the database and return entities. The mappers play a crucial role in this process by transforming the raw database data into more manageable and coherent entity forms. This setup not only enhances code readability but also promotes maintainability and scalability of the application.
-By employing both Models and Entities within our repository architecture, we achieve a clean separation of concerns that enhances the maintainability, scalability, and robustness of our application. Models ensure that our interactions with the database are type-safe and reflect the database structure accurately, while Entities allow us to work with business data in a more intuitive and abstracted manner. This structure not only makes our codebase cleaner and more understandable but also facilitates easier adaptation and extension as business requirements evolve.
+One file per use case, one public function each, grouped by module. The
+function reads top to bottom: authorize, validate, orchestrate. Everything a
+caller is allowed to do is in this directory — `close-voting-session.ts`,
+`create-vote.ts`, `join-team.ts`, `delete-account.ts` — plus `shared/`, which
+holds request authentication, validation and the authorization helpers below.
 
-#### Database
+### repositories
 
-Within the Repositories structure of our application, we have a dedicated folder called **database**. This folder contains all files related to the database connection, migrations, and models.
+One folder per table, one file per query, each returning entities. `mappers/`
+turn rows into entities, so nothing above this layer sees a database shape.
 
-We are using [Kysely](https://kysely.dev/docs/intro), a tool that help us manage database connections, act as a query builder and handle migrations. It is a lightweight, type-safe, and easy-to-use tool that allows us to interact with the database.
+Queries are built with [Kysely](https://kysely.dev/docs/intro): type-safe,
+generated from the real schema (`db:generate` writes `models.ts`), no raw SQL.
+Repositories are instantiated **per request** because they wrap
+[DataLoaders](https://github.com/graphql/dataloader) — the batching is what
+keeps a nested GraphQL document from turning into N+1 queries.
 
-Kysely's query builder is a type-safe, fluent interface that allows developers to construct and execute SQL queries programmatically without writing raw SQL. This means you can build queries through chained method calls, which Kysely then translates into SQL statements. This approach dramatically reduces the risk of SQL injection attacks, ensures that queries are syntactically correct, and leverages TypeScript's type safety to catch errors early in the development process. By abstracting the complexity of raw SQL and leveraging the expressiveness of TypeScript, Kysely's query builder makes database interactions more intuitive, secure, and maintainable.
+`transactions/` holds the operations that must be atomic (closing a session,
+deleting an account). `errors.ts` converts every driver failure into
+`INTERNAL_ERROR` so no Postgres message escapes to a client.
 
-##### Models
+### graphql
 
-Models are a typed representation of query rows, mirroring the structure of the database precisely. For each column in a database table, there is a corresponding property in the model. For instance, if the database has a column named `email` in a User table, the `Users` model will have a property named `email`.
+`schema.graphql` is the contract; `graphql:generate` writes the resolver types.
+Resolvers work on **entities**, not generated models: that is what lets `User`
+expose `team` without ever exposing `organisationId`-style plumbing. Field
+resolution is explicit — every field in the schema has a resolve function, even
+a one-to-one mapping — so data fetching stays visible instead of implicit.
 
-Models are internal to the repository layer and are intimately linked to the database's structure. They serve as a bridge between the raw database data and the application's business logic, ensuring type safety and integrity of the data being passed through the application.
+### gateways
 
-Kysely is responsible for proper typing based on the database schema. By using `bun run db:generate` command, we can generate models for all tables in the database. This command will create a `models.ts` files with all the tables in the database.
-
-#### Mappers
-
-This folder contains a mapper for each entity and a model to have a typed object of a row returned by a query to the database. The mappers are exclusively used by the repositories and are responsible for converting the database output into entity objects. This separation of concerns ensures that the data layer is cleanly abstracted from the business logic.
-
-Don't be afraid to create a single Entity from multiple Models. If your entity needs to be retrieved using multiple queries, it's fine that you will need two or more Models to map it to a single Entity.
-
-### UseCases
-
-The **usecases** directory is dedicated to implementing the application's use cases. Each use case is encapsulated in its own file, ensuring that each file is responsible for one specific use case. This directory is organized logically into folders, grouping related use cases together for easier navigation and understanding.
-
-```
-usecases/
-├── module1/
-│ ├── usecase1.ts
-│ ├── usecase2.ts
-│ └── ...
-├── module2/
-│ ├── usecase3.ts
-│ └── ...
-└── ...
-```
-
-Use Case Structure
-
-- **Single Public Function**: Each use case file contains only one public function. This function is the entry point for executing the use case.
-- **Responsibilities**: The use case is responsible for performing validations, orchestrating calls to other methods or services, and ensuring the logical flow of the use case.
-- **Readability and Clarity**: The implementation of each use case should be straightforward and easy to follow. Reading through the public function, developers should be able to understand the purpose and flow of the use case easily.
-
-This design ensures that each use case is self-contained, easy to read, and maintain. By having a single entry point, the use cases remain focused and are less prone to becoming overly complex or difficult to understand.
-
-### Graphql
-
-The **graphql** directory is pivotal in structuring the GraphQL API layer of the application. It comprises type definitions, queries, mutations, and resolvers organized into modules for maintainability and ease of understanding.
-
-```
-graphql/
-├── resolvers/
-│ ├── scalars/
-│ ├── module1/
-│ │ ├── type1.ts
-│ │ ├── type1-query.ts
-│ │ ├── type1-mutation.ts
-│ │ ├── type2.ts
-│ │ ├── type2-query.ts
-│ │ ├── type2-mutation.ts
-│ │ └── ...
-│ ├── module2/
-│ │ └── ...
-│ └── ...
-└── ...
-```
-
-**Using Entities in Resolvers:** We are using **entities** as internal objects in our resolvers instead of graphql models. This allow us to be more flexible because we can use any attributes from our entities in our resolvers, queries and mutations. This means that we can have "hidden" fields for graphql and only expose the ones we want to be public.
-
-An example of this is the `User` query. A user have an organisation and we want to resolve the User's organisation. If we were using graphql models as internal objects, we would have to add an `organisationId` field in the graphql model and then resolve the `Organisation` model by using this field. The issue is that we don't want to expose the `organisationId` field to the user. That's why we are using `entities` as internal objects. Since entity attributes won't be exposed to the user, we can use the `organisationId` from the entity and expose only the `Organisation` model to the user.
-
-**Field Resolution**: Unlike some GraphQL implementations that rely on auto-resolving fields based on entity attribute names, we take a more explicit approach. Each GraphQL type's field has a corresponding resolve function, even if it directly maps to an entity attribute. This explicitness in field resolution ensures clarity in how data is fetched and transformed, making the API more predictable and easier to debug. It allows for more complex data fetching and transformation logic to be encapsulated cleanly within the resolver functions, providing a clear separation of concerns and making the system more robust and adaptable to changes.
-
-This means that every models in the `schema.graphql` must have a corresponding resolver. Same for each fields of the models.
-
-### Rest
-
-The **rest** directory provides detailed insights into organizing and handling RESTful API endpoints within the project. This structure facilitates the management and expansion of the REST API, ensuring clear separation of concerns and maintainability.
-
-Folder Structure
-
-The REST API's folder structure is designed to encapsulate the various components of RESTful service handling, divided into routes, controllers, DTOs (Data Transfer Objects), and mappers. Each of these components plays a vital role in processing and responding to HTTP requests.
-
-```
-rest/
-├── routes.ts
-├── module1/
-│ ├── controllers/
-│ ├── dtos/
-│ ├── mappers/
-│ └── routes.ts
-├── module2/
-│ └── ...
-└── ...
-```
-
-**Modules:** Each module directory encapsulates all necessary components for handling its specific set of RESTful endpoints:
-
-- **Controllers:** Located within their respective module directories, controllers are tasked with processing incoming HTTP requests, executing pertinent operations (via use cases or services), and generating the appropriate HTTP responses.
-
-- **DTOs (Data Transfer Objects):** Similar to controllers, DTOs are organized by module. They precisely define the format of data being exchanged with the API—safeguarding data integrity through validation and type safety.
-
-- **Mappers:** Mappers within each module translate data between the domain models (entities) and the DTOs. This layer of abstraction elegantly decouples the internal representations of data from their external forms, facilitating seamless data transformations for API communications.
-
-- **Routes:** Each module features a `routes.ts` file that consolidates all routing definitions pertinent to the module. These definitions explicitly map HTTP methods and paths to controller actions, orchestrating the flow of data and control through the application.
-
-**Application-wide Routes:** The top-level `routes.ts` file serves as the entry point for aggregating all module-specific routes. This central routing file effectively stitches together the various modules, prefixing each with `/api` to differentiate RESTful calls from other types of requests (e.g., GraphQL). This uniform prefix streamlines API call organization and handling, ensuring clarity and consistency across the application's RESTful interface.
-
-This refined RESTful API structure underpins a robust, modular architecture that enhances the application's scalability and maintainability. By allocating each domain-specific set of functionalities within its own module, the structure fosters an intuitive development environment that facilitates clear separation of concerns and efficient navigation throughout the codebase.
-
-### Gateways
-
-The **gateways** directory plays a crucial role in interfacing with external services and APIs, such as email services, identity and access management (IAM), storage solutions, and more. This design pattern is instrumental in abstracting the complexities of interacting with these external systems and providing a clean, unified interface for the rest of the application. Here's an overview of how the gateways section is organized and operates:
-
-**Folder Structure:** The **gateways** directory is divided into sub-folders, each dedicated to a specific type of external service (e.g., email, IAM, storage). This organization makes it straightforward to locate and manage the code that interacts with each specific service, enhancing maintainability and scalability.
-
-**Usage of SDKs:** Whenever possible, gateways utilize the official SDKs provided by the external services. This practice ensures that the integration is done according to the best practices recommended by the service providers, taking advantage of the optimizations and features offered by the SDKs. Utilizing SDKs also significantly reduces the amount of boilerplate code developers need to write, as many common tasks (authentication, error handling, etc.) are handled by the SDK.
-
-**DTOs and Mappers:** In cases where no SDK is available or when a more customized integration is needed, gateways can define their own Data Transfer Objects (DTOs) to represent the data structures required by the external services. Each gateway includes a mappers folder, which contains logic to convert between gateway-specific objects (often DTOs) and the application's internal entities. This conversion ensures that the input to and output from gateway functions are in the form of entities, maintaining consistency and type safety within the application.
-
-**Entities as Input and Output:** The primary function of gateways is to facilitate interaction between the application's core logic and external services without exposing the intricacies of these services. By ensuring that both the input and output of gateway functions are entities, the rest of the application can remain decoupled from the specific requirements or data formats of external services. This approach significantly simplifies the process of integrating with new services or switching between different providers.
-
-**Service-Oriented Gateway Naming:** Gateways are named and designed based on the service they provide rather than the specific external tools or providers they utilize, such as naming a gateway EmailGateway instead of BrevoEmailGateway. This approach maintains flexibility, allowing for easy switching between service providers without impacting the broader application, ensuring provider agnosticism and simplifying refactoring, updates, and code maintenance.
-
-By abstracting the gateway's name and functionality from the specific provider, the application becomes more resilient to changes in third-party services. If there's a need to switch email providers from Brevo to SendGrid, for example, this change can occur within the EmailGateway without affecting any other part of the application that relies on email services. This encapsulation minimizes the impact of external changes on the application's core logic.
+One folder per kind of external service, named for the service rather than the
+vendor (`iam`, `storage` — not `firebase`, `r2`), with entities in and entities
+out. `mocks/` mirrors them for tests. Swapping Firebase or R2 should not reach
+past this directory.
 
 ## Context object
 
-The **Context Object** (`src/libs/context`) in the application serves as a crucial carrier that threads services and data throughout the various layers of the application, from the entry points (GraphQL/REST APIs) down to use cases, repositories, and gateways. This object ensures that core components of the application, such as configuration settings, logging services, data repositories, external gateways, and authentication details, are readily accessible where needed, promoting a cohesive and well-structured application architecture.
+`src/libs/context` threads everything a request needs through the layers.
+`config`, `logger`, `gateways` and `events` are built once at startup;
+`repositories` and `auth` are per request — repositories because of the
+dataloaders, `auth` because it carries who the caller is (unauthenticated,
+authenticated, impersonating).
 
-Here’s a closer look at its composition and purpose:
+The sweeper (below) builds its own context with `auth: { isAuthenticated: false }`:
+it acts as the system, and its usecase never asks who the caller is.
 
-**Core Attributes:** Attributes like `config`, `logger` and `gateways` are instantiated once at the server's startup. These components are foundational to the application's operation, providing essential services such as configuration management, logging and interaction with external services. By initializing these once and passing them through the context, the application ensures efficiency and consistency across requests.
+## Realtime and the sweeper
 
-**Request-specific Attributes:** On the other hand, some attributes within the context object, such as `auth` (authentication context) and `repositories`, may be specific to each request. The `auth` attribute, for example, details whether the current user is authenticated, their identifier, and additional information about the session, such as impersonation status. These request-specific details are crucial for enforcing access control and personalizing the application behavior based on the user's state and permissions.
+`votingSessionUpdated` pushes the session on every ballot and on closure, over
+`graphql-ws`. The bus behind it (`src/libs/events`) is an in-process `PubSub` —
+deliberately, while one process serves the app; a Redis-backed bus is the change
+to make when a second appears, and nothing outside that module knows the
+difference.
 
-The `repositories` attribute is instanciated at every request because we are using [DataLoaders](https://github.com/graphql/dataloader) to batch multiple database queries into a single request. This design pattern allows us to avoid hitting the database multiple times for the same data. By using **DataLoaders**, we can prevent the [N+1 problem](https://medium.com/the-marcy-lab-school/what-is-the-n-1-problem-in-graphql-dd4921cb3c1a).
-
-**Auth Context Variants:** The AuthContext can represent different states of authentication, such as unauthenticated, authenticated, impersonating, and not impersonating. This flexible structure allows the application to finely control access and operations based on the user's authentication status and whether they are acting on their own behalf or impersonating another user.
-
-**Application-wide Access:** By threading the context object through the application, each layer (GraphQL/REST APIs, use cases, repositories, gateways) has access to shared services and request-specific data. This design pattern not only facilitates a modular and maintainable codebase but also enhances the application's security and performance by centralizing common functionalities and avoiding unnecessary re-instantiations.
-
-In essence, the context object acts as a comprehensive conduit, ensuring that both global services and request-specific data are efficiently passed throughout the application's layers. This approach significantly contributes to the application's scalability, maintainability, and the overall efficiency of resource usage and execution flow.
+A deadline is the one closure nobody triggers by acting, so
+`src/libs/scheduler/voting-session-sweeper.ts` polls for overdue sessions every
+10s. The sweep is idempotent: whoever closes the session first wins, the rest
+get `null` and stay quiet. It publishes into the same bus the WebSocket server
+subscribes to — which is why both are created once in `src/index.ts`.
 
 ## Error handling
 
@@ -439,7 +281,8 @@ Introspection, the Apollo sandbox and stack traces are controlled by
 
 Repository tests are integration tests against a real Postgres: they assert SQL,
 constraints, transaction behaviour and dataloader batching, none of which a mock
-can tell you anything about.
+can tell you anything about. Entity rules (ballot validity, verdict, standings)
+are unit-tested next to the entity.
 
 `jest.config.ts` starts **one** container for the whole run
 (`src/libs/tests/setup/before-all.ts`) and migrates it once. Suites therefore
@@ -456,33 +299,24 @@ Inside a suite:
 - `tests.helpers` inserts fixtures that already satisfy the foreign keys
   (`insertUserWithTeam`, `insertMatch`, `insertVotingSession`, ...).
 
-## Database Migrations
+## Database migrations
 
-In our project, database migrations are managed using [Kysely](https://kysely.dev/docs/intro), a TypeScript ORM that provides a type-safe way to interact with your database, including the execution of migrations. Migrations are essential for managing the evolution of your database schema over time. They allow for incremental changes to the database, such as creating or modifying tables, without losing data. Here’s how migrations are handled within the project:
+Migrations are Kysely scripts in `src/repositories/database/migrations`, named
+`YYYY_MM_DD_HHMMSS_description.ts` so they order chronologically. Every file
+exports `up` and `down`; the `down` must actually revert, or a bad deploy has no
+way back.
 
-**Kysely for Migrations:** Kysely supports defining migrations that can programmatically alter your database schema. This support includes creating, altering, and dropping tables or columns, among other schema changes.
-
-**Up and Down Functions:** Every migration file must include these two functions to respectively apply and revert the migrations. The `up` function describes the changes to advance the database schema, like creating new tables or adding columns. Conversely, the `down` function defines how to roll back those changes, ensuring that migrations are reversible. This reversibility is crucial for maintaining database integrity and managing changes across different environments smoothly.
-
-**Migration File Naming Convention:** The filenames for migration scripts follow a specific format: `YYYY_MM_DD_HHMMSS_description.ts`. For example, `2024_02_18_164400_init_database.ts`. This format includes the date and time when the migration was created, followed by a short description of the migration. This naming convention helps in organizing migrations chronologically, making it easier to understand the evolution of the database schema over time.
+After changing the schema, run `db:migrate:up` then `db:generate` — `models.ts`
+is generated from the live database, and a stale one makes Kysely lie about the
+columns that exist.
 
 ## Dependencies updates
 
-For managing and automating the updates of dependencies within the project, we utilize [Renovate](https://docs.renovatebot.com/), a tool designed to keep dependencies up-to-date automatically. Renovate can be configured to periodically check for updates across all dependencies (libraries, frameworks, tools, etc.) used in the project and to create pull requests (PRs) for each update. This approach ensures that your project benefits from the latest features, performance improvements, and security patches without requiring manual oversight for each dependency. Here's how to set it up:
+[Renovate](https://docs.renovatebot.com/) opens the update PRs; its config is
+[renovate.json](renovate.json). CI (typecheck + tests) is the gate.
 
-**Integrating Renovate:** Renovate can be integrated into your project through various platforms such as GitHub, GitLab, Bitbucket, and others. For GitHub, for instance, you can add Renovate by installing the Renovate bot into your repository or by using the Renovate GitHub App. This step involves granting the tool access to your repository so it can monitor dependencies and create PRs.
-
-**Configuration:** Renovate works with a configuration file (renovate.json or renovate.config.js) that you add to the root of your repository. This file allows you to customize Renovate's behavior according to your project's needs. You can specify which dependencies to update, how often to check for updates, whether to group certain updates together, and more. Here's a simple example of a renovate.json configuration:
-
-```json
-{
-  "extends": ["config:base"],
-  "schedule": ["every weekend"],
-  "assignees": ["<github_username>"],
-  "labels": ["dependencies", "automerge"]
-}
-```
-
-This configuration tells Renovate to check for updates every weekend, assign the PRs to a specific user, and label them for easier identification.
-
-By using **Renovate**, you can streamline the dependency management process in your project, ensuring that your application remains up-to-date, secure, and stable with minimal manual intervention. This automated approach allows your team to focus more on development and less on maintenance tasks.
+`package.json` carries an `overrides` block pinning patched transitive versions
+(`jose`, `cookie`, `braces`) and a `_dependencyNotes` field explaining why each
+one is there — notably that the `jose` override is scoped to `jwks-rsa` on
+purpose, because a global one breaks graphql-codegen. Re-check those notes on
+every upgrade.
