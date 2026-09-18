@@ -13,12 +13,6 @@ Match, Voting Session, Ballot, Tally, Verdict, Closure Reason, ...) and the
 rules that shape it; the code uses those words literally, and a name that
 drifts from that list is a bug.
 
-Decisions that are not obvious from the code live in [docs/adr](docs/adr):
-
-- [0001](docs/adr/0001-voting-session-closure-is-stored-not-derived.md) — closure is stored, not derived
-- [0002](docs/adr/0002-realtime-over-graphql-subscriptions.md) — realtime over GraphQL subscriptions
-- [0003](docs/adr/0003-images-upload-directly-to-r2.md) — images upload directly to R2
-
 ## Table of Contents
 
 - [Getting started](#getting-started)
